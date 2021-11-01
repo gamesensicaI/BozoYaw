@@ -1,0 +1,619 @@
+
+--local anti_aim = require 'gamesense/antiaim_funcs'
+local client_random_int, client_userid_to_entindex, entity_get_classname, entity_get_player_weapon, entity_is_enemy, globals_tickcount, ui_new_button = client.random_int, client.userid_to_entindex, entity.get_classname, entity.get_player_weapon, entity.is_enemy, globals.tickcount, ui.new_button
+local client_update_player_list, globals_curtime, math_random, ui_new_slider = client.update_player_list, globals.curtime, math.random, ui.new_slider
+local client_latency, client_set_event_callback, entity_get_local_player, entity_is_alive, math_floor, renderer_indicator, renderer_text, ui_get, ui_new_checkbox, ui_new_combobox, ui_new_hotkey, ui_new_label, ui_reference, ui_set, ui_set_visible = client.latency, client.set_event_callback, entity.get_local_player, entity.is_alive, math.floor, renderer.indicator, renderer.text, ui.get, ui.new_checkbox, ui.new_combobox, ui.new_hotkey, ui.new_label, ui.reference, ui.set, ui.set_visible
+--------------------------- References ---------------------------
+local ref = {
+    pitch = ui_reference('AA', 'Anti-aimbot angles', 'Pitch'),
+    yawbase = ui_reference('AA', 'Anti-aimbot angles', 'Yaw base'),
+    yaw = {ui_reference("AA", "Anti-aimbot angles", "Yaw")},
+    bodyyaw = {ui_reference('AA', 'Anti-aimbot angles', 'Body yaw')},
+    fakeyawlimit = ui_reference('AA', 'Anti-aimbot angles', 'Fake yaw limit'),
+    jitter = {ui_reference('AA', 'Anti-aimbot angles', 'Yaw jitter')},
+    freestandingbodyyaw = ui_reference('AA', 'Anti-aimbot angles', 'Freestanding body yaw'),
+    freestanding = {ui_reference('AA', 'Anti-aimbot angles', 'Freestanding')},
+    edgeyaw = ui_reference('AA', 'Anti-aimbot angles', 'Edge yaw'),
+    doubletap  = {ui_reference('Rage','Other','Double tap')},
+    dtmode = ui_reference('Rage', 'Other', 'Double tap mode'),
+    prefer = ui_reference('Rage', 'Aimbot', 'Prefer safe point'),
+    force = ui_reference('Rage', 'Aimbot', 'Force safe point'),
+    onshot = {ui_reference('AA', 'Other', 'On shot anti-aim')},
+    dtlimit = ui_reference('Rage','Other','Double tap fake lag limit'),
+    fakeducking = ui_reference('RAGE', 'Other', 'Duck peek assist'),
+    fakelag = ui.reference('AA', 'Fake lag', 'Enabled'),
+    fakelag_limit = ui_reference('AA', 'Fake lag', 'Limit'),
+    quickpeek = {ui_reference( 'Rage', 'Other', 'Quick peek assist')},
+    slowwalk = {ui_reference('AA', 'Other', 'slow motion')},
+    sv_maxusrcmdprocessticks = ui_reference('MISC', 'Settings', 'sv_maxusrcmdprocessticks'),
+}  
+--------------------------- Anti Aim Stuff ---------------------------  
+local aa = {
+    antiaim = ui_new_combobox('AA', 'Anti-aimbot angles', 'Anti-Aim Mode', {'Gamesense', 'Bullet Detection', 'Detect Missed Side', 'Anti-Aim Builder'}),
+    mode = ui.new_slider('AA', 'Anti-aimbot angles', 'Preset Mode', 1, 5, 1, true, ' ', 1, {[1] = 'Mongoloid', [2] = 'Homunculus', [3] = 'Troglodyte', [4] = 'Random', [5] = 'Metamorphic'}),
+    detectmode = ui.new_slider('AA', 'Anti-aimbot angles', 'Detection Mode', 1, 2, 1, true, ' ', 1, {[1] = 'Default', [2] = 'Custom'}),
+    bullet_range = ui.new_slider('AA', 'Anti-aimbot angles', 'Bruteforce Range', 10, 100, 50, true, "%", 1, {[10] = "wtf u doin this low", [50] = "Regular"}),
+    reset = ui.new_checkbox('AA', 'Anti-aimbot angles', 'Reset On Hit'),
+    textbox_thing = ui.new_label('AA', 'Anti-aimbot angles', 'Custom Angles [Separate With ,]'),
+    builder = ui.new_textbox('AA', 'Anti-aimbot angles', 'Bruteforce Thing'),
+    detect_text = ui.new_label('AA', 'Anti-aimbot angles', 'Missed Angle > 0°'),
+    detectleft = ui.new_textbox('AA', 'Anti-aimbot angles', 'Detect Left'),
+    detect_text2 = ui.new_label('AA', 'Anti-aimbot angles', 'Missed Angle < 0°'),
+    detectright = ui.new_textbox('AA', 'Anti-aimbot angles', 'Detect Right'),
+    pitch = ui_new_combobox('AA', 'Anti-aimbot angles', 'Pitch', {'Off', 'Default', 'Up', 'Down', 'Minimal', 'Random'}),
+    yawbase = ui_new_combobox('AA', 'Anti-aimbot angles', 'Yaw Base', {'Local View', 'At Targets'}),
+    yaw = ui_new_combobox('AA', 'Anti-aimbot angles', 'Yaw', {'Off', '180', 'Spin', 'Static', '180 Z', 'Crosshair'}),
+    yaw_slider = ui_new_slider('AA', 'Anti-aimbot angles', '\nYaw Offset', -180, 180, 0, true, '°'),
+    jitter = ui_new_combobox('AA', 'Anti-aimbot angles', 'Yaw Jitter', {'Off', 'Offset','Center','Random'}),
+    jitter_slider = ui_new_slider('AA', 'Anti-aimbot angles', '\nJitter Offset', -180, 180, 0, true, '°'),
+    bodyyaw = ui_new_combobox('AA', 'Anti-aimbot angles', 'Body Yaw', {'Off', 'Opposite', 'Static', 'Jitter'}),
+    bodyyaw_slider = ui_new_slider('AA', 'Anti-aimbot angles', '\nBody Yaw Offset', -180, 180, 0, true, '°'),
+    freestanding1 = ui_new_combobox('AA', 'Anti-aimbot angles', 'Freestanding Body Yaw', {'Off', 'Default', 'Hybrid', 'Opposite'}),
+    smart_fake = ui_new_checkbox('AA', 'Anti-aimbot angles', 'Smart Fake Yaw'),
+    fake_limit = ui_new_slider('AA', 'Anti-aimbot angles', '\nFake Yaw Limit', 0, 60, 0, true, '°'),
+    edgeyaw = ui_new_hotkey('AA', 'Anti-aimbot angles', 'Edge Yaw'),
+    freestanding = ui_new_hotkey('AA', 'Anti-aimbot angles', 'Freestanding'),
+    manualaa = ui_new_checkbox('AA', 'Anti-aimbot angles', 'Manual Anti-Aim'),
+    manual_left = ui_new_hotkey('AA', 'Anti-aimbot angles', 'Left'),
+    manual_right = ui_new_hotkey('AA', 'Anti-aimbot angles', 'Right'),
+    manual_back = ui_new_hotkey('AA', 'Anti-aimbot angles', 'Back'),
+    legit = ui_new_checkbox('AA', 'Anti-aimbot angles', 'Legit Anti-Aim On Use'),
+    killsay = ui_new_checkbox('AA', 'Anti-aimbot angles', 'Bozo Killsay'),
+    indicators = ui.new_multiselect('AA', 'Other', '[Bozo] Indicators', {'Crosshair', 'Manual AA Arrows', 'Toggle Bozo Yaw Name', 'Hide Skeet Indicators'}),
+    quickpeek_adjustments = ui.new_multiselect('AA', 'Fake Lag', 'Quick Peek Adjustments', {'Freestanding', 'Edge Yaw', 'Disable Pitch', 'Disable Fake Lag'}),
+    health_slider = ui_new_slider('AA', 'Fake Lag', 'Only Disable Pitch If Less Than', 1, 100, 0, true, 'HP', 1, {[100] = 'Always On'}),
+}
+
+--------------------------- Indicators ---------------------------
+local label = ui.new_label('AA', 'Other', 'Primary Color')
+local primary_color = ui.new_color_picker('AA', 'Other', ' ', 0, 255, 255, 255)
+local label2 = ui.new_label('AA', 'Other', 'Secondary Color')
+local secondary_color = ui.new_color_picker('AA', 'Other', '  ', 255, 255, 255, 255)
+local label3 = ui.new_label('AA', 'Other', 'Name Color')
+local name_color = ui.new_color_picker('AA', 'Other', '  ', 255, 255, 255, 255)
+--------------------------- Variable Thingies ---------------------------
+local references = {ref.pitch, ref.yawbase, ref.yaw[1], ref.yaw[2], ref.bodyyaw[1], ref.bodyyaw[2], ref.fakeyawlimit, ref.jitter[1], ref.jitter[2], ref.freestandingbodyyaw, ref.freestanding[1], ref.freestanding[2], ref.edgeyaw}
+local time = 1
+local flip = false
+local detected_angle = 0
+local had_dt = nil
+local left_yaw, right_yaw, back_yaw = -90, 90, 0
+local manual_angle = 0
+local last_press = 0
+local ab = 0
+local aa_state = 0
+local choke = 0
+local choke1 = 0
+local choke2 = 0
+local choke3 = 0
+local choke4 = 0
+local choke5 = 0
+local cached = false
+local cached1 = false
+local reset = true
+
+local minimal = {-14, 16, 44, -86}
+local incremental = {68, -38, 78, 41, 90}
+local default = {60, 0, 83}
+local random = math_random(60, -60)
+
+local min_static = {-26, 0, 15}
+local incremental2 = {15, 30, 45, -15, -30, -45}
+local low_delta = {24, 10, -8, -21}
+local smart = {21, -58, 32, -42, 0}
+
+--change every time update pushed
+local last_update = "October 26th, 2021"
+
+client.color_log(255, 255, 255, "hello bozo")
+client.color_log(255, 255, 255, "Last updated on ", last_update)
+
+local function split(string, symbol)
+    local options = {}
+    for word in string.gmatch(string, '([^'..symbol..']+)') do
+        options[#options+1] = word
+    end
+    return options
+end
+
+local function SetTableVisibility(table, state)
+    for i = 1, #table do
+        ui_set_visible(table[i], state)
+    end
+end
+
+function round(num, numDecimalPlaces)
+local mult = 10^(numDecimalPlaces or 0)
+    return math.floor(num * mult + 0.5) / mult
+end
+
+local function clamp(num, min, max)
+    if num < min then
+        num = min
+    elseif num > max then
+        num = max
+    end
+    return num
+end
+
+local function or_table(bool_tbl, item, state)
+    for k, v in pairs(bool_tbl) do
+        if bool_tbl[k] then
+            ui_set(item, state)
+            break
+        end
+    end
+end
+
+local function contains(item, val)
+table = ui.get(item)
+    for i=1,#table do
+        if table[i] == val then
+            return true
+        end
+    end
+    return false
+end
+
+local function GetClosestPoint(A, B, P)
+local a_to_p = { P[1] - A[1], P[2] - A[2] }
+local a_to_b = { B[1] - A[1], B[2] - A[2] }
+
+local atb2 = a_to_b[1]^2 + a_to_b[2]^2
+
+local atp_dot_atb = a_to_p[1]*a_to_b[1] + a_to_p[2]*a_to_b[2]
+local t = atp_dot_atb / atb2
+
+return { A[1] + a_to_b[1]*t, A[2] + a_to_b[2]*t }
+end
+
+-- 3d line distance detection from ts
+local function dist_from_3dline(shooter, e)
+local x, y, z = entity.hitbox_position(shooter, 0)
+local x1, y1, z1 = client.eye_position()
+
+local p = {x1,y1,z1}
+
+local a = {x,y,z}
+local b = {e.x,e.y,e.z}
+
+local ab = {b[1] - a[1], b[2] - a[2], b[3] - a[3]}
+local len = math.sqrt(ab[1]^2 + ab[2]^2 + ab[3]^2)
+local d  = {ab[1] / len, ab[2] / len, ab[3] / len}
+local ap = {p[1] - a[1], p[2] - a[2], p[3] - a[3]}
+local d2 = d[1]*ap[1] + d[2]*ap[2] + d[3]*ap[3]
+
+bp = {a[1] + d2 * d[1], a[2] + d2 * d[2], a[3] + d2 * d[3]}
+
+return (bp[1]-x1) + (bp[2]-y1) + (bp[3]-z1)
+end
+
+local skip = false
+client_set_event_callback('bullet_impact', function(c)
+    if ((ui_get(aa.antiaim) == 'Bullet Detection' or ui_get(aa.antiaim) == 'Detect Missed Side' or ui_get(aa.antiaim) == 'Anti-Aim Builder') and entity.is_alive(entity.get_local_player())) and not skip then
+        local ent = client.userid_to_entindex(c.userid)
+        if not entity.is_dormant(ent) and entity.is_enemy(ent) then
+            local ent_pos = { entity.get_prop(ent, 'm_vecOrigin') }
+            local loc_pos = { entity.get_prop(ent, 'm_vecOrigin') }
+
+            local delta = dist_from_3dline(ent, c)
+
+            if ui_get(aa.antiaim) == 'Bullet Detection' or ui_get(aa.antiaim) == 'Anti-Aim Builder' then
+                if math.abs(delta) < ui_get(aa.bullet_range) then
+                    ab = ab + 1
+                    flip = true
+                end
+            elseif ui_get(aa.antiaim) == 'Detect Missed Side' then
+                local ent_pos = { entity.get_prop(ent, 'm_vecOrigin') }
+                local loc_pos = { entity.hitbox_position(entity.get_local_player(), 0) }
+                local end_pos = {loc_pos[1] - ent_pos[1], loc_pos[2] - ent_pos[2], loc_pos[3] - ent_pos[3]}
+            
+                if math.abs(delta) < ui_get(aa.bullet_range) then
+                    local direciton = 1
+                    if end_pos[1] >= 0 and end_pos[2] < 0 then
+                        direciton = 1
+                    elseif end_pos[1] <= 0 and end_pos[2] < 0 then
+                        direciton = 1
+                    elseif end_pos[1] <= 0 and end_pos[2] > 0 then
+                        direciton = -1
+                    elseif end_pos[1] >= 0 and end_pos[2] > 0  then
+                        direciton = -1
+                    end
+
+                    detected_angle = delta * direciton
+                    flip = true
+                end
+            end
+        end
+    end
+
+    local static = ui_get(aa.bodyyaw) == 'Static'
+    local jitter = ui_get(aa.bodyyaw) == 'Jitter'
+    local mode = ui_get(aa.mode)
+
+    local function set(a1, b1)
+        ui_set(aa.bodyyaw, a1)
+        ui_set(aa.fake_limit, b1)
+    end
+
+    if flip then
+        if ui_get(aa.antiaim) == 'Bullet Detection' then 
+            if mode == 1 and jitter then
+                ui_set(aa.bodyyaw_slider, minimal[(ab%4)+1])
+                ui_set(aa.bodyyaw, 'Jitter')
+            elseif mode == 2 and jitter then
+                ui_set(aa.bodyyaw_slider, incremental[(ab%5)+1])
+                ui_set(aa.bodyyaw, 'Jitter')
+            elseif mode == 3 and jitter then
+                ui_set(aa.bodyyaw_slider, default[(ab%3)+1])
+                ui_set(aa.bodyyaw, 'Jitter')
+            elseif mode == 1 and static then
+                ui_set(aa.bodyyaw_slider, min_static[(ab%3)+1])
+                ui_set(aa.bodyyaw, 'Static')
+            elseif mode == 2 and static then
+                ui_set(aa.bodyyaw_slider, incremental2[(ab%6)+1])
+                ui_set(aa.bodyyaw, 'Static')
+            elseif mode == 3 and static then
+                ui_set(aa.bodyyaw_slider, low_delta[(ab%4)+1])
+                ui_set(aa.bodyyaw, 'Static')    
+            elseif mode == 4 and static or jitter then
+                ui_set(aa.bodyyaw_slider, math_random(60, -60))
+            elseif mode == 5 and static or jitter then
+                ui_set(aa.bodyyaw_slider, smart[(ab%5)+1])
+            end
+
+
+            elseif ui_get(aa.antiaim) == 'Anti-Aim Builder' then --thx ally
+                local settings = split(ui_get(aa.builder), ',')
+                aa_state = clamp((aa_state + 1) % (#settings+1), 1, (#settings+1))
+                ui_set(aa.bodyyaw_slider, settings[aa_state])
+
+            elseif ui_get(aa.antiaim) == 'Detect Missed Side' and ui_get(aa.detectmode) == 1 then
+                ui_set(aa.bodyyaw, 'Static')
+            if detected_angle > 0 then
+                ui_set(aa.bodyyaw_slider, -180)
+            else
+                ui_set(aa.bodyyaw_slider, 180)
+            end
+    
+            elseif ui_get(aa.antiaim) == 'Detect Missed Side' and ui_get(aa.detectmode) == 2 then
+                if detected_angle > 0 then
+                    local settings = split(ui_get(aa.detectleft), ',')
+                    aa_state = clamp((aa_state + 1) % (#settings+1), 1, (#settings+1))
+                    ui_set(aa.bodyyaw_slider, settings[aa_state])  
+            else
+                if detected_angle < 0 then
+                    local settings = split(ui_get(aa.detectright), ',')
+                    aa_state = clamp((aa_state + 1) % (#settings+1), 1, (#settings+1))
+                    ui_set(aa.bodyyaw_slider, settings[aa_state])
+                end
+            end
+        end
+            ui_set(ref.bodyyaw[2], ui_get(aa.bodyyaw_slider))
+        flip = false
+    end
+    skip = false
+end)
+
+client_set_event_callback('player_hurt', function(e)
+    local attacker_entindex = client_userid_to_entindex(e.attacker)
+    local victim_entindex = client_userid_to_entindex(e.userid)
+    if ui_get(aa.antiaim) == 'Detect Missed Side' then
+        if entity.is_alive(entity.get_local_player()) then
+            if victim_entindex == entity_get_local_player() and entity_is_enemy(attacker_entindex) then
+            local by = ui_get(aa.bodyyaw_slider)
+            ui_set(aa.bodyyaw_slider, by * -1)
+            skip = true
+            end
+        end
+    end
+    if ui_get(aa.reset) and ui_get(aa.antiaim) == 'Bullet Detection' then
+        if entity.is_alive(entity.get_local_player()) then
+                if victim_entindex == entity_get_local_player() and entity_is_enemy(attacker_entindex) then
+                ui_set(aa.bodyyaw_slider, 8)
+            end 
+        end
+    end
+end)
+
+client_set_event_callback('setup_command', function(cmd)
+            
+if ui_get(aa.mode) == 2 and ui_get(aa.bodyyaw_slider) == 90 then
+    ui_set(aa.fake_limit, 60)
+end
+if ui_get(aa.manual_back) then
+    return_yaw = back_yaw
+    last_press = globals.curtime()
+elseif (ui_get(aa.manual_left) or ui_get(aa.manual_right)) and last_press + 0.3 < globals.curtime() then
+    return_yaw = ui_get(aa.manual_left) and (return_yaw == left_yaw and back_yaw or left_yaw) or (return_yaw == right_yaw and back_yaw or right_yaw)
+    last_press = globals.curtime()
+elseif last_press > globals.curtime() then
+    last_press = globals.curtime()
+end
+if ui_get(aa.manualaa) then
+    if return_yaw == left_yaw then
+        ui_set(aa.yaw_slider, -90)
+        ui_set(aa.yawbase, 'Local view')
+    elseif return_yaw == right_yaw then
+        ui_set(aa.yaw_slider, 90)
+        ui_set(aa.yawbase, 'Local view')
+    else
+        ui_set(aa.yaw_slider, 0)
+        ui_set(aa.yawbase, 'At targets')
+    end
+end
+
+local x, y = entity.get_prop( entity.get_local_player(), 'm_vecVelocity')
+local speed = x ~= nil and math.floor(math.sqrt( x * x + y * y + 0.5 )) or 0
+
+local local_player = entity.get_local_player()
+local health = entity.get_prop(local_player, 'm_iHealth')
+
+
+local in_air = entity.get_prop(entity.get_local_player(), "m_fFlags") == 256
+local on_ground = entity.get_prop(entity.get_local_player(), "m_fFlags") == 257
+local fake_duck = entity.get_prop(entity.get_local_player(), "m_fFlags") == 261
+local crouching_in_air = entity.get_prop(entity.get_local_player(), "m_fFlags") == 262
+local crouching = entity.get_prop(entity.get_local_player(), "m_fFlags") == 263
+local quickpeek = ui_get(ref.quickpeek[2]) and 'Always on' or 'On hotkey'
+
+if ui_get(aa.smart_fake) then
+    if not cached then
+        cached_jitter = ui.get(aa.jitter)
+        cached_jitter_slider = ui.get(aa.jitter_slider)
+        cached_bodyyaw = ui.get(aa.bodyyaw)
+        cached_slider = ui.get(aa.bodyyaw_slider)
+        cached_fake = ui.get(aa.fake_limit)
+        cached = true
+    end
+    if speed > 85 and not crouching_in_air then
+        ui_set(aa.bodyyaw, 'Jitter')
+        ui_set(aa.bodyyaw_slider, 90)
+        ui_set(aa.fake_limit, 60)
+    elseif crouching_in_air then
+            ui_set(aa.bodyyaw, 'Static')
+            ui_set(aa.bodyyaw_slider, -32)
+            ui_set(aa.fake_limit, client.random_int(0, 28))
+    elseif ui_get(ref.slowwalk[2]) and speed > 1 then
+            ui_set(aa.jitter, 'Random')
+            ui_set(aa.jitter_slider, client.random_int(7, 18))
+            ui_set(aa.bodyyaw, 'Opposite')
+            ui_set(aa.fake_limit, client.random_int(32, 58))
+    elseif not in_air and speed < 85 and cached and not crouching_in_air and not ui_get(ref.slowwalk[2]) then
+            ui_set(aa.jitter, cached_jitter)
+            ui_set(aa.jitter_slider, cached_jitter_slider)
+            ui_set(aa.bodyyaw, cached_bodyyaw)
+            ui_set(aa.bodyyaw_slider, cached_slider)
+            ui_set(aa.fake_limit, cached_fake)
+            cached = false
+        end
+    end
+    
+    if contains(aa.quickpeek_adjustments, 'Edge Yaw') then
+        ui_set(aa.edgeyaw, (quickpeek))
+    end
+    if contains(aa.quickpeek_adjustments, 'Freestanding') then
+        ui_set(aa.freestanding, (quickpeek))
+    end
+    if contains(aa.quickpeek_adjustments, 'Disable Fake Lag') then
+        ui_set(ref.fakelag, not ui_get(ref.quickpeek[2]))
+    end
+
+    if contains(aa.quickpeek_adjustments, 'Disable Pitch') then
+        if health <= ui_get(aa.health_slider) and ui_get(ref.quickpeek[2]) then
+            ui_set(aa.pitch, (ui_get(ref.quickpeek[2])) and 'Off' or 'Default')
+            elseif health <= ui_get(aa.health_slider) and not ui_get(ref.quickpeek[2]) or health >= ui_get(aa.health_slider)then
+                ui_set(aa.pitch, 'Default')
+            end
+        end
+    
+
+
+--credits to kez
+local weapon = entity_get_player_weapon()
+if ui_get(aa.legit) and weapon ~= nil and entity_get_classname(weapon) == 'CC4' then
+        if cmd.in_attack == 1 then
+            cmd.in_attack = 0
+            cmd.in_use = 1
+            ui_set(ref.fakeyawlimit, 58)
+        end
+    else
+        if cmd.chokedcommands == 0 then
+            cmd.in_use = 0
+            ui_set(ref.fakeyawlimit, ui_get(aa.fake_limit))
+        end
+    end
+
+if cmd.chokedcommands < choke then
+	choke1 = choke2
+	choke2 = choke3
+	choke3 = choke4
+	choke4 = choke5
+    choke5 = choke
+end
+choke = cmd.chokedcommands
+
+    ui_set(ref.pitch, ui_get(aa.pitch))
+    ui_set(ref.yawbase, ui_get(aa.yawbase))
+    ui_set(ref.yaw[1], ui_get(aa.yaw))
+    ui_set(ref.yaw[2], ui_get(aa.yaw_slider))
+    ui_set(ref.jitter[1], ui_get(aa.jitter))
+    ui_set(ref.jitter[2], ui_get(aa.jitter_slider))
+    ui_set(ref.bodyyaw[1], ui_get(aa.bodyyaw))
+    ui_set(ref.bodyyaw[2], ui_get(aa.bodyyaw_slider))
+    ui_set(ref.fakeyawlimit, ui_get(aa.fake_limit))
+    ui_set(ref.edgeyaw, ui_get(aa.edgeyaw) and true or false)
+    ui_set(ref.freestanding[1], 'Default')
+    ui_set(ref.freestanding[2], ui_get(aa.freestanding) and 'Always on' or 'On hotkey')
+    ui_set(ref.freestandingbodyyaw, ui_get(aa.freestanding1) == 'Default' and true or false)
+
+    if ui_get(aa.freestanding1) == 'Hybrid' then
+        ui_set(ref.bodyyaw[1], 'Opposite')
+        ui_set(ref.freestandingbodyyaw, true)
+    elseif ui_get(aa.freestanding1) == 'Opposite' then
+        ui_set(ref.bodyyaw[1], 'Opposite')      
+    end
+end)
+
+local function player_death(e)
+    local killsay = {
+        "1, BOZO.",
+        "(◣_◢)BOZO DOWN!(◣_◢)",
+        "YOU SILLY BOZO! YOU JUST GOT OWNED!",
+        "YOU SILLY LITTLE SAUSAGE! GET GOOD, GET BOZO YAW!",
+        "FUCKIN ACTUAL MONGOLOID. GET OWNED BY BOZO YAW.",
+        "BOZO ELIMINATED! L KID + RATIO, YOUR MOM HAS A PENIS, SIT DOWN. GET REAL. #SPEAKINFROMTHEHEART",
+        "YOU FUCKIN BABOON! YOU CAN'T RESOLVE ME YOU FUCKING DONUT! OWNED BY BOZO YAW!",
+        "NICE HACK, APE! GET CRACKED LIKE AN EGG BY BOZO YAW",
+    }
+    if ui_get(aa.killsay) then
+        local attacker_entindex = client_userid_to_entindex(e.attacker)
+        local victim_entindex = client_userid_to_entindex(e.userid)
+            if attacker_entindex ~= entity_get_local_player() then
+                return
+            end
+        client.exec('say ' .. killsay[math.random(1, #killsay)])
+    end
+end
+
+local function indicators()
+local sx, sy = client.screen_size()
+local clr = {ui_get(primary_color)}
+local clr2 = {ui_get(secondary_color)}
+local clr3 = {ui_get(name_color)}
+local height_mid = sy/1.885
+local height_top = sy/1.93
+local height_line = sy/1.91
+local nigger = sx/2.0001
+
+if entity.is_alive(entity.get_local_player()) then
+local local_player = entity.get_local_player()
+local body_yaw = math.max(-60, math.min(60, round((entity.get_prop(local_player, 'm_flPoseParameter', 11) or 0)*120-60+0.5, 1)))
+local chokedcommands = globals.chokedcommands()
+
+local fake_lag_limit = ui.get(ref.fakelag_limit)
+if chokedcommands then
+    chokedcommands = chokedcommands / fake_lag_limit
+end
+
+if contains(aa.indicators, 'Hide Skeet Indicators') then
+    for i = 1, 200 do
+    renderer_indicator(0, 0, 0, 0, " ")
+    end
+end
+
+--ADD MULTISELECT
+if contains(aa.indicators, 'Crosshair') then
+    --desync line
+    renderer.gradient(sx/2.002, sy/1.86,-body_yaw, 3, clr[1], clr[2], clr[3], clr[4], clr[1], clr[2], clr[3], 0, 0, 0, 0, 0,  true)
+    renderer.gradient(sx/2.002, sy/1.86, body_yaw, 3, clr[1], clr[2], clr[3], clr[4], clr[1], clr[2], clr[3], 0, 0, 0, 0, 0,  true)
+    renderer_text(sx/2.003, sy/1.858, clr2[1], clr2[2], clr2[3], clr2[4], '-c', nil, 'DESYNC')
+    --fake lag line
+    renderer.gradient(sx/1.9835, sy/1.835, chokedcommands * 62, 3, clr[1], clr[2], clr[3], clr[4], clr[1], clr[2], clr[3], 0, 0, 0, 0, 0,  true)
+    renderer.gradient(sx/2.016, sy/1.835, -chokedcommands * 62, 3, clr[1], clr[2], clr[3], clr[4], clr[1], clr[2], clr[3], 0, 0, 0, 0, 0,  true)
+    renderer_text(sx/2.004, sy/1.832, clr2[1], clr2[2], clr2[3], clr2[4], '-c', nil, 'LAG')
+
+    if ui_get(ref.doubletap[2]) then
+        renderer_text(sx/2 - 23, height_mid, clr[1], clr[2], clr[3], clr[4], '-c', nil, 'DT')
+    else
+        renderer_text(sx/2 - 23, height_mid, clr2[1], clr2[2], clr2[3], clr2[4], '-c', nil,' DT')
+    end    
+
+    if ui_get(ref.fakeducking) or not ui_get(ref.doubletap[2]) then
+       renderer_text(sx/2 - 23, height_mid, clr2[1], clr2[2], clr2[3], clr2[4], '-c', nil, 'DT')
+    end
+
+    if ui_get(ref.onshot[1]) and ui_get(ref.onshot[2]) then
+        renderer_text(sx/2 - 9, height_mid, clr[1], clr[2], clr[3], clr[4], '-c', nil,'OS')
+    else
+        renderer_text(sx/2 - 9, height_mid, clr2[1], clr2[2], clr2[3], clr2[4], '-c', nil,'OS')
+    end
+    
+    if ui_get(ref.force) then
+        renderer_text(sx/2 + 5, height_mid, clr[1], clr[2], clr[3], clr[4], '-c', nil, 'SP')
+    else
+        renderer_text(sx/2 + 5, height_mid, clr2[1], clr2[2], clr2[3], clr2[4], '-c', nil, 'SP')
+    end
+    
+    if ui_get(ref.fakeducking) then
+        renderer_text(sx/2 + 18, height_mid, clr[1], clr[2], clr[3], clr[4], '-c', nil, 'FD')
+   else
+        renderer_text(sx/2 + 18, height_mid, clr2[1], clr2[2], clr2[3], clr2[4], '-c', nil, 'FD')
+    end
+
+    --⮜ ⮞
+
+    if contains(aa.indicators, 'Manual AA Arrows') then
+        if ui_get(aa.manual_left) then
+            renderer_text(sx/2 - 50, sy/2 - 2, clr[1], clr[2], clr[3], clr[4], '+c', nil, '⮜')
+        else
+            renderer_text(sx/2 - 50, sy/2 - 2, 255, 255, 255, 120, '+c', nil, '⮜')
+        end
+        if ui_get(aa.manual_right) then
+            renderer_text(sx/2 + 48, sy/2 - 2, clr[1], clr[2], clr[3], clr[4], '+c', nil, '⮞')
+        else
+            renderer_text(sx/2 + 48, sy/2 - 2, 255, 255, 255, 120, '+c', nil, '⮞')
+        end
+    end
+end
+    if contains(aa.indicators, 'Toggle Bozo Yaw Name') then
+        renderer_text(sx/2.004, sy/1.915, clr3[1], clr3[2], clr3[3], clr3[4], '-c', nil, 'BOZOYAW')
+        end
+    end
+end
+
+----------------------------- Load Good Settings Button -----------------------------
+local function settings()
+    ui_set(aa.antiaim, 'Bullet Detection')
+    ui_set(aa.mode, 2)
+    ui_set(aa.bullet_range, 30)
+    ui_set(aa.yaw, '180')
+    ui_set(aa.pitch, 'Default')
+    ui_set(aa.yawbase, 'At Targets')
+    ui_set(ref.dtmode, 'Defensive')
+    ui_set(aa.bodyyaw, 'Static')
+    ui_set(aa.bodyyaw_slider, -45)   
+    ui_set(aa.fake_limit, 58)
+    ui_set(aa.jitter, 'Off')
+    ui_set(aa.freestanding, 'Off')
+    ui_set(ind, true)
+    ui_set(aa.legit, true)
+end
+
+----------------------------- Visible Stuff -----------------------------
+local function hide_shit()
+
+    SetTableVisibility(references, false)
+    
+    SetTableVisibility({aa.mode, aa.reset}, ui_get(aa.antiaim) == 'Bullet Detection')
+    SetTableVisibility({aa.builder, aa.textbox_thing}, ui_get(aa.antiaim) == 'Anti-Aim Builder')
+    SetTableVisibility({aa.detect_text, aa.detect_text2, aa.detectleft, aa.detectright}, ui_get(aa.detectmode) == 2)
+    SetTableVisibility({aa.manual_left, aa.manual_right, aa.manual_back}, ui_get(aa.manualaa))
+    SetTableVisibility({label, label2, label3, primary_color, secondary_color, name_color}, contains(aa.indicators, 'Crosshair'))
+    ui_set_visible(aa.fake_limit, ui_get(aa.antiaim) == 'Gamesense' or ui_get(aa.antiaim) == 'Detect Missed Side' or ui_get(aa.antiaim) == 'Anti-Aim Builder')
+
+    
+    ui_set_visible(aa.detectmode, ui_get(aa.antiaim) == 'Detect Missed Side')
+    ui_set_visible(aa.health_slider, contains(aa.quickpeek_adjustments, 'Disable Pitch'))
+    ui_set_visible(aa.bodyyaw_slider, ui_get(aa.bodyyaw) == 'Static' or ui_get(aa.bodyyaw) == 'Jitter')
+    ui_set_visible(aa.jitter_slider, ui_get(aa.jitter) == 'Offset' or ui_get(aa.jitter) == 'Center' or ui_get(aa.jitter) == 'Random')
+    ui_set_visible(aa.fake_limit, ui_get(aa.bodyyaw) == 'Opposite' or ui_get(aa.bodyyaw) == 'Static' or ui_get(aa.bodyyaw) == 'Jitter')
+    ui_set_visible(aa.bullet_range, ui_get(aa.antiaim) == 'Detect Missed Side' or ui_get(aa.antiaim) == 'Bullet Detection' or ui_get(aa.antiaim) == 'Anti-Aim Builder')
+    ui_set_visible(aa.yaw_slider, ui_get(aa.yaw) == '180' or ui_get(aa.yaw) == 'Spin' or ui_get(aa.yaw) == 'Static' or ui_get(aa.yaw) == '180 Z' or ui_get(aa.yaw) == 'Crosshair')
+
+    if ui_get(aa.antiaim) == 'Gamesense' or ui_get(aa.antiaim) == 'Bullet Detection' or ui_get(aa.antiaim) == 'Anti-Aim Builder' then
+        ui_set(aa.detectmode, 1)  
+    end
+end
+    
+local function on_shutdown()
+    SetTableVisibility(references, true)
+end
+
+client_set_event_callback('shutdown', on_shutdown)
+client_set_event_callback('setup command', settings)
+client_set_event_callback('paint_ui', hide_shit)
+client_set_event_callback('paint', indicators)
+client_set_event_callback("player_death", player_death)
+
+local load = ui_new_button('AA', 'Anti-aimbot angles', 'Load Good Settings', settings)
